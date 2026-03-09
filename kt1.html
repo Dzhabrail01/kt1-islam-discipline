@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Гостевой блог - Безопасная версия</title>
+    
+</head>
+<body>
+    <div class="container">
+        <h1>Исправленный блог</h1>
+
+        <!-- ФОРМА ДОБАВЛЕНИЯ -->
+        <div class="input-group">
+            <h3>Добавить комментарий</h3>
+            <input 
+                type="text" 
+                id="name" 
+                placeholder="Ваше имя (макс. 50 символов)" 
+                maxlength="50"
+                autocomplete="off"
+            >
+            <input 
+                type="text" 
+                id="comment" 
+                placeholder="Текст комментария (макс. 500 символов)" 
+                maxlength="500"
+                autocomplete="off"
+            >
+            <button class="btn-submit" onclick="addComment()">Добавить комментарий</button>
+            <div id="error-msg" class="error-msg"></div>
+            <div id="success-msg" class="success-msg"></div>
+        </div>
+
+        <!--  СПИСОК КОММЕНТАРИЕВ  -->
+        <h3>
+            Комментарии 
+            <button class="btn-clear" onclick="clearAllComments()">Очистить все</button>
+        </h3>
+        <div id="comments-list" class="comments-list">
+            <div class="no-comments">Комментариев пока нет. Будьте первым!</div>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT -->
+    <script>
+        // ============================================================
+        // ЗАЩИТА ОТ XSS: Все пользовательские данные обрабатываются
+        // через textContent и createTextNode, никогда через innerHTML
+        // ============================================================
+
+        // Загрузка комментариев при старте страницы
+        document.addEventListener('DOMContentLoaded', loadComments);
+
+        /**
+         * Основная функция добавления комментария
+         * Включает валидацию и защиту от XSS
+         */
+        function addComment() {
+            const nameInput = document.getElementById('name');
+            const commentInput = document.getElementById('comment');
+            const errorMsg = document.getElementById('error-msg');
+            const successMsg = document.getElementById('success-msg');
+
+            // Получаем и очищаем данные
+            const name = nameInput.value.trim();
+            const comment = commentInput.value.trim();
+
+            // === ВАЛИДАЦИЯ ВХОДНЫХ ДАННЫХ ===
+            
+            // Проверка на пустые значения
+            if (name === "" || comment === "") {
+                showError("Ошибка: Имя и комментарий не могут быть пустыми.");
+                return;
+            }
+
+            // Проверка на минимальную длину
+            if (name.length < 2) {
+                showError("Ошибка: Имя должно содержать минимум 2 символа.");
+                return;
+            }
+
+            // Проверка на минимальную длину комментария
+            if (comment.length < 5) {
+                showError("Ошибка: Комментарий должен содержать минимум 5 символов.");
+                return;
+            }
+
+            // Проверка на опасные символы (дополнительная защита)
+            if (containsDangerousPatterns(name) || containsDangerousPatterns(comment)) {
+                showError("Ошибка: Обнаружены недопустимые символы.");
+                return;
+            }
+
+            // Очистка предыдущих сообщений
+            hideMessages();
+
+            // Создаем объект комментария
+            const newComment = {
+                name: name,
+                text: comment,
+                date: new Date().toLocaleString('ru-RU')
+            };
+
+            // Сохраняем в LocalStorage
+            saveCommentToStorage(newComment);
+
+            // Отображаем на странице
+            renderComment(newComment);
+
+            // Очищаем поля ввода
+            nameInput.value = "";
+            commentInput.value = "";
+
+            // Показываем сообщение об успехе
+            showSuccess("Комментарий успешно добавлен!");
+        }
+
+        /**
+         * Функция безопасного отображения одного комментария
+         * КЛЮЧЕВАЯ ЗАЩИТА ОТ XSS: используем textContent вместо innerHTML
+         */
+        function renderComment(data) {
+            const commentsList = document.getElementById('comments-list');
+            
+            // Удаляем сообщение "нет комментариев" если оно есть
+            const noCommentsMsg = commentsList.querySelector('.no-comments');
+            if (noCommentsMsg) {
+                noCommentsMsg.remove();
+            }
+
+            // === БЕЗОПАСНОЕ СОЗДАНИЕ ЭЛЕМЕНТОВ ===
+            const commentDiv = document.createElement('div');
+            commentDiv.className = 'comment';
+
+            // Контейнер для имени и даты
+            const headerDiv = document.createElement('div');
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'comment-name';
+            nameSpan.textContent = data.name; // БЕЗОПАСНОСТЬ: textContent экранирует HTML
+
+            const dateSpan = document.createElement('span');
+            dateSpan.className = 'comment-date';
+            dateSpan.textContent = " (" + data.date + ")";
+
+            headerDiv.appendChild(nameSpan);
+            headerDiv.appendChild(dateSpan);
+
+            // Текст комментария
+            const textDiv = document.createElement('div');
+            textDiv.className = 'comment-text';
+            textDiv.textContent = data.text; // БЕЗОПАСНОСТЬ: textContent экранирует HTML
+
+            commentDiv.appendChild(headerDiv);
+            commentDiv.appendChild(textDiv);
+            
+            // Добавляем новый комментарий в начало списка
+            commentsList.prepend(commentDiv);
+        }
+
+        /**
+         * Сохранение в LocalStorage браузера
+         */
+        function saveCommentToStorage(commentObj) {
+            let comments = JSON.parse(localStorage.getItem('guestbook_comments')) || [];
+            comments.push(commentObj);
+            localStorage.setItem('guestbook_comments', JSON.stringify(comments));
+        }
+
+        /**
+         * Загрузка комментариев из LocalStorage
+         */
+        function loadComments() {
+            let comments = JSON.parse(localStorage.getItem('guestbook_comments')) || [];
+            
+            if (comments.length === 0) {
+                return; // Оставляем сообщение "нет комментариев"
+            }
+
+            comments.forEach(function(comment) {
+                renderComment(comment);
+            });
+        }
+
+        /**
+         * Очистка всех комментариев
+         */
+        function clearAllComments() {
+            if (confirm('Вы уверены, что хотите удалить все комментарии?')) {
+                localStorage.removeItem('guestbook_comments');
+                document.getElementById('comments-list').innerHTML = 
+                    '<div class="no-comments">Комментариев пока нет. Будьте первым!</div>';
+                showSuccess("Все комментарии удалены!");
+            }
+        }
+
+        /**
+         * Проверка на опасные паттерны (дополнительная защита)
+         */
+        function containsDangerousPatterns(str) {
+            const dangerousPatterns = [
+                /<script/i,
+                /<\/script/i,
+                /javascript:/i,
+                /on\w+\s*=/i,  // onclick=, onerror=, и т.д.
+                /<iframe/i,
+                /<object/i,
+                /<embed/i
+            ];
+
+            for (let pattern of dangerousPatterns) {
+                if (pattern.test(str)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Показать сообщение об ошибке
+         */
+        function showError(message) {
+            const errorMsg = document.getElementById('error-msg');
+            const successMsg = document.getElementById('success-msg');
+            
+            successMsg.classList.remove('visible');
+            errorMsg.textContent = message;
+            errorMsg.classList.add('visible');
+        }
+
+        /**
+         * Показать сообщение об успехе
+         */
+        function showSuccess(message) {
+            const successMsg = document.getElementById('success-msg');
+            const errorMsg = document.getElementById('error-msg');
+            
+            errorMsg.classList.remove('visible');
+            successMsg.textContent = message;
+            successMsg.classList.add('visible');
+            
+            // Автоматически скрыть через 3 секунды
+            setTimeout(() => {
+                successMsg.classList.remove('visible');
+            }, 3000);
+        }
+
+        /**
+         * Скрыть все сообщения
+         */
+        function hideMessages() {
+            document.getElementById('error-msg').classList.remove('visible');
+            document.getElementById('success-msg').classList.remove('visible');
+        }
+    </script>
+</body>
+</html>
+
+<style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .comment-form, .comments {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .comment {
+            background-color: #f9f9f9;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 3px solid #4CAF50;
+        }
+</style>
+
+
+<!-- 
+
+1. Обнаруженные уязвимости
+В ходе аудита исходного кода были выявлены следующие критические проблемы:
+XSS-уязвимость (Межсайтовый скриптинг). Использование свойства innerHTML для вставки пользовательского текста позволяло 
+злоумышленникам внедрять и исполнять вредоносный JavaScript-код в браузере жертвы.
+Отсутствие валидации входных данных. Поля ввода не проверялись на пустоту, длину или опасные символы, что позволяло отправлять некорректные данные.
+Потеря данных при обновлении. Поскольку приложение работало только в памяти браузера без сохранения, все комментарии исчезали после перезагрузки страницы.
+
+2. Примененные методы защиты и их эффективность
+Для устранения уязвимостей были реализованы следующие меры:
+Безопасное манипулирование DOM. Свойство innerHTML заменено на textContent и методы создания элементов (createElement). 
+Это эффективно, потому что браузер автоматически экранирует специальные символы (например, < превращается в &lt;), 
+поэтому введенный скрипт отображается как текст, а не выполняется.
+Валидация на клиенте. Добавлены проверки на минимальную длину, пустые значения и опасные паттерны (например, теги <script>).
+Это предотвращает попадание вредоносных или некорректных данных в систему.
+Использование LocalStorage. Данные комментариев сохраняются в локальном хранилище браузера. Это решает проблему потери данных 
+при обновлении страницы без необходимости настройки сервера.
+
+Итог: Примененные меры обеспечивают базовую защиту от XSS-атак на клиентской стороне и повышают устойчивость приложения к некорректному вводу.
+
+
+
+-->
